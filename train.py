@@ -53,7 +53,6 @@ def main():
 
 
 def computeBetaVAELoss(input, output, means, vars, beta=1):
-  #loss, recon, kl = computeBetaVAELoss(x, out, means, vars, beta=config["beta"]) vars = stds
   # TODO
   sse_loss = F.mse_loss(input=input, target=output, reduction='sum')
 

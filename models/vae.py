@@ -14,8 +14,7 @@ class DownsizeBlock(nn.Module):
     super().__init__()
     #TODO
     # stride should halve the input resolution
-    #layernorm2d, Conv2d(in_channels=in_channels, out_channels=out_channels, kernel_size=3, padding=1, stride=2), GELU()
-    self.norm2d = LayerNorm2d(in_channels) #changed from out
+    self.norm2d = LayerNorm2d(in_channels)
     self.conv = nn.Conv2d(in_channels=in_channels, out_channels=out_channels, kernel_size=3, padding=1, stride=2)
     self.activation = nn.GELU()
     
@@ -31,8 +30,7 @@ class UpsizeBlock(nn.Module):
   def __init__(self, in_channels, out_channels):
     super().__init__()
     #TODO
-    #self.interpol = F.interpolate(input=in_channels, size=out_channels ,mode='bilinear') # interpolation scale by a factor of 2
-    self.norm2d = LayerNorm2d(in_channels) # layernorm2d (changed from out_channels)
+    self.norm2d = LayerNorm2d(in_channels) # layernorm2d
     self.conv = nn.Conv2d(in_channels=in_channels, out_channels=out_channels,kernel_size=3, padding=1)
     self.activation = nn.GELU() # GELU()
 
@@ -81,7 +79,7 @@ class Bottleneck(nn.Module):
      x = self.norm(x)
 
      means = self.lin_means(x)
-     stds = self.lin_stds(x) # need to apply softplus & clamp
+     stds = self.lin_stds(x)
      stds = self.softplus(stds) # applying softplus
      stds = torch.clamp(stds, 0.0001, 2) # clamping standard deviations
 
@@ -106,7 +104,7 @@ class ResidualConvBlock(nn.Module):
     #TODO
     # apply a residual around the entire set of layers
     residual = x
-    for i in range(self.layers): # changed from len(self.layers)
+    for _ in range(self.layers):
       x = self.conv(x)
       x = self.activation(x)
     return x + residual
@@ -117,10 +115,10 @@ class VAE(nn.Module):
   def __init__(self, block_dims = [16, 32, 64, 128], layers_per_scale=2, image_width=64, bottle=512):
     super().__init__()
     #TODO
-    self.encoder = nn.Sequential() #nn.ModuleList()
-    self.decoder = nn.Sequential() #nn.ModuleList() # should work in reverse order to encoder
+    self.encoder = nn.Sequential()
+    self.decoder = nn.Sequential() 
     S = image_width// (2**len(block_dims)) # defining S the final shape dimensions
-    self.bottle = Bottleneck((block_dims[-1], S, S), bottle_dim=bottle) #changed from bottleneck
+    self.bottle = Bottleneck((block_dims[-1], S, S), bottle_dim=bottle)
 
 
     # encoder architecture
@@ -134,7 +132,7 @@ class VAE(nn.Module):
         self.encoder.append(DownsizeBlock(block_dims[d], block_dims[d]))
     
     # decoder architecture
-    for d in range(len(block_dims) - 1, -1, -1): # but backwards
+    for d in range(len(block_dims) - 1, -1, -1): # encoder but backwards
       self.decoder.append(ResidualConvBlock(d=block_dims[d], layers=layers_per_scale))
       if d != 0: # does not equal first element
         self.decoder.append(UpsizeBlock(block_dims[d], block_dims[d - 1])) 
@@ -150,13 +148,10 @@ class VAE(nn.Module):
 
   def forward(self, x):
     #TODO
-    # for layer in self.encoder:
-    #   x = layer(x)
     x = self.encoder(x)
-    x, means, stds = self.bottle(x) # changed from bottleneck
 
-    # for layer in self.decoder:
-    #   x = layer(x)
+    x, means, stds = self.bottle(x)
+
     x = self.decoder(x)
     return x, means, stds
     
