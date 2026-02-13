@@ -15,7 +15,7 @@ class DownsizeBlock(nn.Module):
     #TODO
     # stride should halve the input resolution
     #layernorm2d, Conv2d(in_channels=in_channels, out_channels=out_channels, kernel_size=3, padding=1, stride=2), GELU()
-    self.norm2d = LayerNorm2d()
+    self.norm2d = LayerNorm2d(in_channels) #changed from out
     self.conv = nn.Conv2d(in_channels=in_channels, out_channels=out_channels, kernel_size=3, padding=1, stride=2)
     self.activation = nn.GELU()
     
@@ -31,9 +31,18 @@ class UpsizeBlock(nn.Module):
   def __init__(self, in_channels, out_channels):
     super().__init__()
     #TODO
+    #self.interpol = F.interpolate(input=in_channels, size=out_channels ,mode='bilinear') # interpolation scale by a factor of 2
+    self.norm2d = LayerNorm2d(in_channels) # layernorm2d (changed from out_channels)
+    self.conv = nn.Conv2d(in_channels=in_channels, out_channels=out_channels,kernel_size=3, padding=1)
+    self.activation = nn.GELU() # GELU()
 
   def forward(self, x):
     #TODO
+    x = F.interpolate(input=x, scale_factor=2, mode='bilinear', align_corners=False)
+    x = self.norm2d(x)
+    x = self.conv(x)
+    x = self.activation(x)
+    return x
 
 
 class Bottleneck(nn.Module):
@@ -83,24 +92,24 @@ class Bottleneck(nn.Module):
      return x, means, stds
    
 class ResidualConvBlock(nn.Module):
-   def __init__(self, d, layers, width=3):
-      super().__init__()
-     #TODO
-     # 2d convolutional layers w/ GELU's in between
-     # pad each convolution so that dimensions do not change
-     pad = (width - 1)/2
-     self.conv = nn.Conv2d(channels_in=d, channels_out=d, kernel_size=width, padding=pad)
-     self.activation = nn.GELU()
-     self.layers = layers
+  def __init__(self, d, layers, width=3):
+    super().__init__()
+    #TODO
+    # 2d convolutional layers w/ GELU's in between
+    # pad each convolution so that dimensions do not change
+    pad = (width - 1)//2
+    self.conv = nn.Conv2d(in_channels=d, out_channels=d, kernel_size=width, padding=pad)
+    self.activation = nn.GELU()
+    self.layers = layers
     
-   def forward(self, x):
-      #TODO
-      # apply a residual around the entire set of layers
-      residual = x
-      for i in range(len(self.layers)):
-        x = self.conv(x)
-        x = self.activation(x)
-      return x + residual
+  def forward(self, x):
+    #TODO
+    # apply a residual around the entire set of layers
+    residual = x
+    for i in range(self.layers): # changed from len(self.layers)
+      x = self.conv(x)
+      x = self.activation(x)
+    return x + residual
       
 
 class VAE(nn.Module):
@@ -108,22 +117,48 @@ class VAE(nn.Module):
   def __init__(self, block_dims = [16, 32, 64, 128], layers_per_scale=2, image_width=64, bottle=512):
     super().__init__()
     #TODO
-    self.encoder = nn.ModuleList()
+    self.encoder = nn.Sequential() #nn.ModuleList()
+    self.decoder = nn.Sequential() #nn.ModuleList() # should work in reverse order to encoder
+    S = image_width// (2**len(block_dims)) # defining S the final shape dimensions
+    self.bottle = Bottleneck((block_dims[-1], S, S), bottle_dim=bottle) #changed from bottleneck
 
+
+    # encoder architecture
     self.encoder.append(nn.Conv2d(in_channels=3, out_channels=block_dims[0], kernel_size=3, padding=1))
-    for d in range(1, len(block_dims)):
+    for d in range(len(block_dims)):
       self.encoder.append(ResidualConvBlock(d=block_dims[d], layers=layers_per_scale))
       
       if d != len(block_dims) - 1: # if not last block
-        self.encoder.append(DownsizeBlock(block_dims[d], block_dims[d+1]))
+        self.encoder.append(DownsizeBlock(block_dims[d], block_dims[d + 1]))
       else: # if last block
         self.encoder.append(DownsizeBlock(block_dims[d], block_dims[d]))
+    
+    # decoder architecture
+    for d in range(len(block_dims) - 1, -1, -1): # but backwards
+      self.decoder.append(ResidualConvBlock(d=block_dims[d], layers=layers_per_scale))
+      if d != 0: # does not equal first element
+        self.decoder.append(UpsizeBlock(block_dims[d], block_dims[d - 1])) 
+      else:
+        self.decoder.append(UpsizeBlock(block_dims[d], block_dims[d]))
+    
+    # converting to an output image
+    self.decoder.append(nn.Conv2d(in_channels=block_dims[0], out_channels=block_dims[0], kernel_size=3, padding=1))
+    self.decoder.append(nn.GELU())
+    self.decoder.append(nn.Conv2d(in_channels=block_dims[0], out_channels=3, kernel_size=1)) 
+    self.decoder.append(nn.Tanh())
+
 
   def forward(self, x):
     #TODO
-    for i in self.layers:
-      x = i(x)
-    return x
+    # for layer in self.encoder:
+    #   x = layer(x)
+    x = self.encoder(x)
+    x, means, stds = self.bottle(x) # changed from bottleneck
+
+    # for layer in self.decoder:
+    #   x = layer(x)
+    x = self.decoder(x)
+    return x, means, stds
     
 
 

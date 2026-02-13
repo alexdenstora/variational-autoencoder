@@ -53,9 +53,15 @@ def main():
 
 
 def computeBetaVAELoss(input, output, means, vars, beta=1):
-  
+  #loss, recon, kl = computeBetaVAELoss(x, out, means, vars, beta=config["beta"]) vars = stds
   # TODO
+  sse_loss = F.mse_loss(input=input, target=output, reduction='sum')
 
+  kl_loss = torch.sum((vars**2)/2 + (means**2)/2 - torch.log(vars) - 0.5)
+
+  batch_size = input.shape[0]
+  loss = sse_loss + (beta * kl_loss) / batch_size
+  
   return loss, sse_loss, kl_loss
 
 
